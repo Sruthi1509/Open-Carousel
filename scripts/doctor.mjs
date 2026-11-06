@@ -8,7 +8,7 @@
 
 import { existsSync, statSync } from "node:fs";
 import { execSync } from "node:child_process";
-import { homedir, platform } from "node:os";
+import { platform } from "node:os";
 import { join } from "node:path";
 
 const CHECK = "✓";
@@ -40,38 +40,55 @@ if (major >= 20) {
   add(FAIL, "Node", `v${process.versions.node} (need ≥20 — install from https://nodejs.org)`, true);
 }
 
-// 2. Claude CLI
-const claudeEnv = process.env.CLAUDE_CLI_PATH;
-const candidates = [
-  claudeEnv,
-  join(homedir(), ".local/bin/claude"),
-  "/usr/local/bin/claude",
-  "/opt/homebrew/bin/claude",
-  join(homedir(), ".npm-global/bin/claude"),
-].filter(Boolean);
+// 2. Ollama Daemon & Configured Model
+const ollamaBaseUrl = process.env.OLLAMA_BASE_URL || "http://127.0.0.1:11434";
+const targetModel = process.env.OLLAMA_MODEL || "qwen2.5:3b";
 
-let claudePath = null;
-const which = tryExec(platform() === "win32" ? "where claude" : "command -v claude");
-if (which) claudePath = which.split("\n")[0];
-if (!claudePath) {
-  for (const c of candidates) {
-    if (existsSync(c)) {
-      claudePath = c;
-      break;
-    }
+let ollamaReachable = false;
+let modelFound = false;
+
+try {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 3000);
+  const res = await fetch(`${ollamaBaseUrl}/api/tags`, {
+    signal: controller.signal,
+    headers: { Accept: "application/json" },
+  }).finally(() => clearTimeout(timeout));
+
+  if (res.ok) {
+    ollamaReachable = true;
+    const data = await res.json();
+    const models = Array.isArray(data.models) ? data.models : [];
+    modelFound = models.some(
+      (m) =>
+        m.name === targetModel ||
+        m.name === `${targetModel}:latest` ||
+        `${m.name}:latest` === targetModel
+    );
   }
+} catch {
+  // connection failed or timed out
 }
-if (claudePath) {
-  add(CHECK, "Claude CLI", claudePath);
+
+if (ollamaReachable) {
+  add(CHECK, "Ollama Daemon", `reachable at ${ollamaBaseUrl}`);
 } else {
-  add(FAIL, "Claude CLI", "not found — install from https://docs.anthropic.com/en/docs/claude-code", true);
+  add(FAIL, "Ollama Daemon", `not reachable at ${ollamaBaseUrl} — run 'ollama serve'`, true);
+}
+
+if (modelFound) {
+  add(CHECK, "Ollama Model", `model "${targetModel}" ready`);
+} else if (ollamaReachable) {
+  add(FAIL, "Ollama Model", `model "${targetModel}" not found — run 'ollama pull ${targetModel}'`, true);
+} else {
+  add(WARN, "Ollama Model", `could not verify model "${targetModel}" (daemon offline)`);
 }
 
 // 3. Dependencies
 if (existsSync("node_modules") && statSync("node_modules").isDirectory()) {
   add(CHECK, "Dependencies", "node_modules present");
 } else {
-  add(FAIL, "Dependencies", "node_modules missing — run `/start` or `npm install`", true);
+  add(FAIL, "Dependencies", "node_modules missing — run `npm install`", true);
 }
 
 // 4. Data files
@@ -80,25 +97,28 @@ const missingData = dataFiles.filter((f) => !existsSync(join("data", f)));
 if (missingData.length === 0) {
   add(CHECK, "Data files", "all 5 seeded");
 } else if (missingData.length === dataFiles.length) {
-  add(FAIL, "Data files", "none seeded — run `/start` or `npm run setup`", true);
+  add(FAIL, "Data files", "none seeded — run `npm run setup`", true);
 } else {
-  add(WARN, "Data files", `${missingData.length} missing: ${missingData.join(", ")} — run /start`);
+  add(WARN, "Data files", `${missingData.length} missing: ${missingData.join(", ")}`);
 }
 
-// 5. Port 3000
+// 5. Port 3000 / 3001
 let portStatus = "free";
 let portFree = true;
 if (platform() !== "win32") {
-  const pid = tryExec("lsof -ti :3000");
+  const pid =
+    tryExec("lsof -ti :3000") ||
+    tryExec("fuser 3000/tcp 2>/dev/null") ||
+    (tryExec("ss -tulpn")?.includes(":3000 ") ? "in use" : null);
+
   if (pid) {
-    portStatus = `in use by PID ${pid.split("\n")[0]} — \`/stop\` to kill`;
+    portStatus = `in use (${pid.trim()}) — Next.js will auto-use port 3001`;
     portFree = false;
   }
 } else {
-  // Best-effort on Windows; non-fatal
   const out = tryExec("netstat -ano -p tcp");
   if (out && /:3000\s+.+LISTENING/i.test(out)) {
-    portStatus = "in use (run `netstat -ano | findstr :3000` for details)";
+    portStatus = "in use — Next.js will auto-use port 3001";
     portFree = false;
   }
 }

@@ -49,5 +49,10 @@
     "tailwindcss": "^4",
     "typescript": "^5"
   },
-  "author": "Enrique Rocha (@soyenriquerocha) (https://www.tododeia.com)"
+  "author": "Enrique Rocha (@soyenriquerocha) (https://www.tododeia.com)",
+  "allowScripts": {
+    "puppeteer@24.40.0": true,
+    "sharp@0.34.5": true,
+    "unrs-resolver@1.11.1": true
+  }
 }

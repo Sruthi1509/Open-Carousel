@@ -19,6 +19,7 @@ import { CaptionPanel } from "@/components/editor/CaptionPanel";
 import { SafeZoneOverlay } from "@/components/editor/SafeZoneOverlay";
 import { FullscreenPreview } from "@/components/editor/FullscreenPreview";
 import type { Carousel, AspectRatio } from "@/types/carousel";
+import type { OllamaHealthStatus } from "@/lib/ollama-client";
 
 interface PageProps {
   params: Promise<{ id: string }>;
@@ -31,6 +32,7 @@ export default function CarouselEditorPage({ params }: PageProps) {
   const [notFound, setNotFound] = useState(false);
   const [activeSlide, setActiveSlide] = useState(0);
   const [claudeAvailable, setClaudeAvailable] = useState(true);
+  const [aiAvailability, setAiAvailability] = useState<OllamaHealthStatus | null>(null);
   const [chatOpen, setChatOpen] = useState(true);
   const [isGenerating, setIsGenerating] = useState(false);
   const [showSafeZones, setShowSafeZones] = useState(false);
@@ -79,7 +81,8 @@ export default function CarouselEditorPage({ params }: PageProps) {
       await fetchCarousel();
       try {
         const res = await fetch("/api/chat/check");
-        const data: { available?: boolean } = await res.json();
+        const data: OllamaHealthStatus = await res.json();
+        setAiAvailability(data);
         if (data.available === false) setClaudeAvailable(false);
       } catch {
         // assume available
@@ -245,6 +248,7 @@ export default function CarouselEditorPage({ params }: PageProps) {
             <ChatPanel
               carouselId={id}
               claudeAvailable={claudeAvailable}
+              aiAvailability={aiAvailability}
               referenceImages={carousel.referenceImages || []}
               onStreamStart={handleStreamStart}
               onStreamEnd={handleStreamEnd}

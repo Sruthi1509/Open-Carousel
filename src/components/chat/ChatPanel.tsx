@@ -9,6 +9,7 @@ import { ChatInput } from "./ChatInput";
 import { ReferenceImages } from "./ReferenceImages";
 import { AlertCircle, Plug } from "lucide-react";
 import type { ReferenceImage } from "@/types/carousel";
+import type { OllamaHealthStatus } from "@/lib/ollama-client";
 
 interface Message {
   id: string;
@@ -19,7 +20,8 @@ interface Message {
 interface ChatPanelProps {
   carouselId: string;
   referenceImages?: ReferenceImage[];
-  claudeAvailable: boolean;
+  claudeAvailable?: boolean;
+  aiAvailability?: OllamaHealthStatus | null;
   onStreamStart?: () => void;
   onStreamEnd?: () => void;
   chatInputRef?: React.RefObject<HTMLTextAreaElement | null>;
@@ -28,6 +30,7 @@ interface ChatPanelProps {
 export function ChatPanel({
   carouselId,
   claudeAvailable,
+  aiAvailability,
   referenceImages = [],
   onStreamStart,
   onStreamEnd,
@@ -114,6 +117,7 @@ export function ChatPanel({
             message,
             sessionId,
             carouselId,
+            history: messages.slice(-10).map((m) => ({ role: m.role, content: m.content })),
           }),
           signal: abortRef.current.signal,
         });
@@ -228,23 +232,38 @@ export function ChatPanel({
         onStreamEnd?.();
       }
     },
-    [isStreaming, sessionId, carouselId, onStreamStart, onStreamEnd, persistMessages]
+    [isStreaming, sessionId, carouselId, messages, onStreamStart, onStreamEnd, persistMessages]
   );
 
-  if (!claudeAvailable) {
+  const isAvailable = aiAvailability ? aiAvailability.available : (claudeAvailable ?? true);
+
+  if (!isAvailable) {
+    const isMissingModel = Boolean(aiAvailability?.ollamaReachable && !aiAvailability?.modelAvailable);
+    const modelName = aiAvailability?.model || "qwen2.5:3b";
+
     return (
       <div className="h-full flex flex-col items-center justify-center p-6 text-center">
         <Plug className="h-10 w-10 text-muted-foreground mb-3" />
-        <h3 className="font-semibold text-sm mb-1">Connect Claude CLI</h3>
-        <p className="text-xs text-muted-foreground max-w-[200px]">
-          Install Claude CLI to enable AI-powered carousel creation.{" "}
+        <h3 className="font-semibold text-sm mb-1">
+          {isMissingModel ? "Download Ollama Model" : "Start Ollama Service"}
+        </h3>
+        <p className="text-xs text-muted-foreground max-w-[240px] mb-3">
+          {isMissingModel
+            ? `Model "${modelName}" is not found in your local Ollama library.`
+            : "Connect to local Ollama to enable AI-powered carousel creation."}
+        </p>
+        <div className="bg-muted px-3 py-1.5 rounded text-[11px] font-mono text-foreground mb-3 select-all">
+          {isMissingModel ? `ollama pull ${modelName}` : "ollama serve"}
+        </div>
+        <p className="text-[11px] text-muted-foreground">
+          Need help?{" "}
           <a
-            href="https://docs.anthropic.com/en/docs/claude-code"
+            href="https://ollama.com"
             target="_blank"
             rel="noopener noreferrer"
             className="text-accent underline"
           >
-            Install guide
+            Ollama Documentation
           </a>
         </p>
       </div>
@@ -255,7 +274,14 @@ export function ChatPanel({
     <div className="h-full flex flex-col">
       <div className="px-4 py-3 border-b border-border flex items-start justify-between">
         <div>
-          <h2 className="text-sm font-semibold">AI Assistant</h2>
+          <div className="flex items-center gap-2">
+            <h2 className="text-sm font-semibold">AI Assistant</h2>
+            {aiAvailability?.model && (
+              <span className="text-[10px] bg-accent/15 text-accent px-1.5 py-0.5 rounded font-mono font-normal">
+                {aiAvailability.model}
+              </span>
+            )}
+          </div>
           <p className="text-xs text-muted-foreground">
             Describe the carousel you want to create
           </p>
