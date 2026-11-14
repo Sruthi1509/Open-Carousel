@@ -40,7 +40,7 @@ if (major >= 20) {
   add(FAIL, "Node", `v${process.versions.node} (need ≥20 — install from https://nodejs.org)`, true);
 }
 
-// 2. Ollama Daemon & Configured Model
+// 2. AI Providers (Ollama and/or Claude CLI)
 const ollamaBaseUrl = process.env.OLLAMA_BASE_URL || "http://127.0.0.1:11434";
 const targetModel = process.env.OLLAMA_MODEL || "qwen2.5:3b";
 
@@ -70,18 +70,36 @@ try {
   // connection failed or timed out
 }
 
+let claudePath = null;
+if (process.env.CLAUDE_CLI_PATH && existsSync(process.env.CLAUDE_CLI_PATH)) {
+  claudePath = process.env.CLAUDE_CLI_PATH;
+} else {
+  const probe = tryExec(platform() === "win32" ? "where claude" : "command -v claude");
+  if (probe) claudePath = probe.split(/\r?\n/)[0].trim();
+}
+
+const ollamaReady = ollamaReachable && modelFound;
+const claudeReady = Boolean(claudePath && existsSync(claudePath));
+const anyAiReady = ollamaReady || claudeReady;
+
 if (ollamaReachable) {
   add(CHECK, "Ollama Daemon", `reachable at ${ollamaBaseUrl}`);
 } else {
-  add(FAIL, "Ollama Daemon", `not reachable at ${ollamaBaseUrl} — run 'ollama serve'`, true);
+  add(claudeReady ? INFO : FAIL, "Ollama Daemon", `not reachable at ${ollamaBaseUrl} — run 'ollama serve'`, !anyAiReady);
 }
 
 if (modelFound) {
   add(CHECK, "Ollama Model", `model "${targetModel}" ready`);
 } else if (ollamaReachable) {
-  add(FAIL, "Ollama Model", `model "${targetModel}" not found — run 'ollama pull ${targetModel}'`, true);
+  add(claudeReady ? INFO : FAIL, "Ollama Model", `model "${targetModel}" not found — run 'ollama pull ${targetModel}'`, !anyAiReady);
 } else {
-  add(WARN, "Ollama Model", `could not verify model "${targetModel}" (daemon offline)`);
+  add(claudeReady ? INFO : WARN, "Ollama Model", `could not verify model "${targetModel}" (daemon offline)`);
+}
+
+if (claudeReady) {
+  add(CHECK, "Claude CLI", `ready at ${claudePath}`);
+} else {
+  add(ollamaReady ? INFO : WARN, "Claude CLI", "not installed (optional when Ollama is available)");
 }
 
 // 3. Dependencies

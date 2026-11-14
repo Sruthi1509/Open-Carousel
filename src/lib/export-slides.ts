@@ -7,6 +7,7 @@ import path from "path";
 import sharp from "sharp";
 import { wrapSlideHtml, extractFontFamilies } from "./slide-html";
 import { getInlinedFontCSS } from "./fonts";
+import { getUploadsDir } from "./storage-paths";
 import type { Slide, AspectRatio } from "@/types/carousel";
 import { DIMENSIONS } from "@/types/carousel";
 
@@ -24,7 +25,13 @@ async function getBrowser(): Promise<Browser> {
   if (!browser || !browser.isConnected()) {
     browser = await puppeteer.launch({
       headless: true,
-      args: ["--no-sandbox", "--disable-setuid-sandbox", "--disable-gpu"],
+      args: [
+        "--no-sandbox",
+        "--disable-setuid-sandbox",
+        "--disable-gpu",
+        "--disable-dev-shm-usage",
+      ],
+      executablePath: process.env.PUPPETEER_EXECUTABLE_PATH || undefined,
     });
     exportCount = 0;
   }
@@ -36,7 +43,7 @@ async function getBrowser(): Promise<Browser> {
  * Replaces /uploads/xxx.png paths with data: URIs.
  */
 async function inlineImages(html: string): Promise<string> {
-  const uploadDir = path.resolve(process.cwd(), "public");
+  const uploadsDir = getUploadsDir();
   const imgRegex = /(?:src=["']|url\(["']?)(\/uploads\/[^"'\s)]+)/g;
   const matches = [...html.matchAll(imgRegex)];
 
@@ -44,7 +51,8 @@ async function inlineImages(html: string): Promise<string> {
   for (const match of matches) {
     const imgPath = match[1];
     try {
-      const fullPath = path.join(uploadDir, imgPath);
+      const relPath = imgPath.replace(/^\/uploads\/?/, "");
+      const fullPath = path.join(uploadsDir, relPath);
       const buffer = await readFile(fullPath);
       const ext = path.extname(imgPath).toLowerCase();
       const mime =

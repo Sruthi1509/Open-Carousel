@@ -49,5 +49,11 @@ next-env.d.ts
 open-carrusel*.log
 /.next/cache/
 
+# Electron packaging & bundled binaries
+/release/
+/bundled-chromium/
+/squashfs-root/
+/dist-electron/
+
 # OS
 Thumbs.db

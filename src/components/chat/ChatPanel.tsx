@@ -7,7 +7,7 @@ import { useState, useRef, useEffect, useCallback } from "react";
 import { ChatMessage } from "./ChatMessage";
 import { ChatInput } from "./ChatInput";
 import { ReferenceImages } from "./ReferenceImages";
-import { AlertCircle, Plug } from "lucide-react";
+import { AlertCircle, Plug, Loader2 } from "lucide-react";
 import type { ReferenceImage } from "@/types/carousel";
 import type { OllamaHealthStatus } from "@/lib/ollama-client";
 
@@ -38,10 +38,21 @@ export function ChatPanel({
 }: ChatPanelProps) {
   const [messages, setMessages] = useState<Message[]>([]);
   const [isStreaming, setIsStreaming] = useState(false);
+  const [statusMessage, setStatusMessage] = useState<string | null>(null);
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [provider, setProvider] = useState<"ollama" | "claude">("ollama");
   const scrollRef = useRef<HTMLDivElement>(null);
   const abortRef = useRef<AbortController | null>(null);
+
+  useEffect(() => {
+    const saved = localStorage.getItem("preferred-ai-provider") as "ollama" | "claude" | null;
+    if (saved && (saved === "claude" ? aiAvailability?.claudeAvailable : aiAvailability?.available)) {
+      setProvider(saved);
+    } else if (aiAvailability?.activeProvider) {
+      setProvider(aiAvailability.activeProvider);
+    }
+  }, [aiAvailability]);
 
   // Load session ID and chat history from localStorage
   useEffect(() => {
@@ -70,26 +81,31 @@ export function ChatPanel({
   const handleClearChat = useCallback(() => {
     setMessages([]);
     setSessionId(null);
+    setStatusMessage(null);
     localStorage.removeItem(`chat-messages-${carouselId}`);
     localStorage.removeItem(`chat-session-${carouselId}`);
   }, [carouselId]);
 
   const handleStopGenerating = useCallback(() => {
     abortRef.current?.abort();
-  }, []);
+    setIsStreaming(false);
+    setStatusMessage(null);
+    onStreamEnd?.();
+  }, [onStreamEnd]);
 
   // Auto-scroll to bottom
   useEffect(() => {
     if (scrollRef.current) {
       scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
     }
-  }, [messages]);
+  }, [messages, statusMessage]);
 
   const handleSend = useCallback(
     async (message: string) => {
       if (isStreaming) return;
       setError(null);
       setIsStreaming(true);
+      setStatusMessage("Connecting to AI...");
       onStreamStart?.();
 
       // Add user message
@@ -117,7 +133,8 @@ export function ChatPanel({
             message,
             sessionId,
             carouselId,
-            history: messages.slice(-10).map((m) => ({ role: m.role, content: m.content })),
+            provider,
+            history: messages.slice(-6).map((m) => ({ role: m.role, content: m.content })),
           }),
           signal: abortRef.current.signal,
         });
@@ -148,7 +165,10 @@ export function ChatPanel({
             if (line.startsWith("data: ")) {
               try {
                 const data = JSON.parse(line.slice(6));
-                if (data.type === "token" && typeof data.text === "string") {
+
+                if (data.type === "status" && typeof data.text === "string") {
+                  setStatusMessage(data.text);
+                } else if (data.type === "token" && typeof data.text === "string") {
                   accumulated += data.text;
                   setMessages((prev) =>
                     prev.map((m) =>
@@ -158,7 +178,7 @@ export function ChatPanel({
                     )
                   );
                 } else if (data.type === "result" && typeof data.text === "string") {
-                  accumulated = data.text; // result is the final complete text
+                  accumulated = data.text;
                   setMessages((prev) =>
                     prev.map((m) =>
                       m.id === assistantId
@@ -166,19 +186,7 @@ export function ChatPanel({
                         : m
                     )
                   );
-                }
-              } catch {
-                // skip unparseable
-              }
-            } else if (line.startsWith("event: done")) {
-              // Next line has the done data
-            } else if (
-              line.startsWith("data: ") &&
-              line.includes("sessionId")
-            ) {
-              try {
-                const data = JSON.parse(line.slice(6));
-                if (data.sessionId) {
+                } else if (data.sessionId) {
                   setSessionId(data.sessionId);
                   localStorage.setItem(
                     `chat-session-${carouselId}`,
@@ -186,19 +194,25 @@ export function ChatPanel({
                   );
                 }
               } catch {
-                // skip
+                // skip unparseable
               }
+            } else if (line.startsWith("event: done")) {
+              setStatusMessage(null);
+            } else if (line.startsWith("event: error")) {
+              // Wait for data line containing error details
             }
           }
         }
 
-        // Parse any remaining buffer for the done event
+        // Parse any remaining buffer
         if (buffer.trim()) {
           for (const line of buffer.split("\n")) {
             if (line.startsWith("data: ")) {
               try {
                 const data = JSON.parse(line.slice(6));
-                if (data.sessionId) {
+                if (data.type === "status" && typeof data.text === "string") {
+                  setStatusMessage(data.text);
+                } else if (data.sessionId) {
                   setSessionId(data.sessionId);
                   localStorage.setItem(
                     `chat-session-${carouselId}`,
@@ -213,8 +227,8 @@ export function ChatPanel({
         }
       } catch (err) {
         if (err instanceof Error && err.name === "AbortError") return;
-        const message = err instanceof Error ? err.message : "An unexpected error occurred";
-        setError(message);
+        const errMsg = err instanceof Error ? err.message : "An unexpected error occurred";
+        setError(errMsg);
         // Remove empty assistant message on error
         setMessages((prev) =>
           prev.filter(
@@ -223,6 +237,7 @@ export function ChatPanel({
         );
       } finally {
         setIsStreaming(false);
+        setStatusMessage(null);
         abortRef.current = null;
         // Persist messages after stream completes
         setMessages((prev) => {
@@ -232,40 +247,40 @@ export function ChatPanel({
         onStreamEnd?.();
       }
     },
-    [isStreaming, sessionId, carouselId, messages, onStreamStart, onStreamEnd, persistMessages]
+    [isStreaming, sessionId, carouselId, provider, messages, onStreamStart, onStreamEnd, persistMessages]
   );
 
   const isAvailable = aiAvailability ? aiAvailability.available : (claudeAvailable ?? true);
 
   if (!isAvailable) {
-    const isMissingModel = Boolean(aiAvailability?.ollamaReachable && !aiAvailability?.modelAvailable);
-    const modelName = aiAvailability?.model || "qwen2.5:3b";
-
     return (
       <div className="h-full flex flex-col items-center justify-center p-6 text-center">
         <Plug className="h-10 w-10 text-muted-foreground mb-3" />
-        <h3 className="font-semibold text-sm mb-1">
-          {isMissingModel ? "Download Ollama Model" : "Start Ollama Service"}
-        </h3>
-        <p className="text-xs text-muted-foreground max-w-[240px] mb-3">
-          {isMissingModel
-            ? `Model "${modelName}" is not found in your local Ollama library.`
-            : "Connect to local Ollama to enable AI-powered carousel creation."}
+        <h3 className="font-semibold text-sm mb-1">Connect an AI Provider</h3>
+        <p className="text-xs text-muted-foreground max-w-[280px] mb-4">
+          Open Carrusel supports local Ollama and Claude CLI. Connect either to start designing.
         </p>
-        <div className="bg-muted px-3 py-1.5 rounded text-[11px] font-mono text-foreground mb-3 select-all">
-          {isMissingModel ? `ollama pull ${modelName}` : "ollama serve"}
+        <div className="w-full max-w-xs space-y-3 text-left">
+          <div className="p-3 rounded-lg border border-border bg-muted/40">
+            <div className="text-xs font-semibold mb-1">Option 1: Local Ollama (Free & Offline)</div>
+            <p className="text-[11px] text-muted-foreground mb-1.5">Run in your terminal:</p>
+            <div className="bg-muted px-2.5 py-1 rounded text-[10px] font-mono select-all">
+              ollama serve && ollama pull qwen2.5:3b
+            </div>
+          </div>
+          <div className="p-3 rounded-lg border border-border bg-muted/40">
+            <div className="text-xs font-semibold mb-1">Option 2: Claude CLI</div>
+            <p className="text-[11px] text-muted-foreground mb-1.5">Install Claude Code CLI:</p>
+            <a
+              href="https://docs.anthropic.com/en/docs/claude-code"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-[11px] text-accent underline"
+            >
+              Claude CLI installation guide &rarr;
+            </a>
+          </div>
         </div>
-        <p className="text-[11px] text-muted-foreground">
-          Need help?{" "}
-          <a
-            href="https://ollama.com"
-            target="_blank"
-            rel="noopener noreferrer"
-            className="text-accent underline"
-          >
-            Ollama Documentation
-          </a>
-        </p>
       </div>
     );
   }
@@ -276,14 +291,51 @@ export function ChatPanel({
         <div>
           <div className="flex items-center gap-2">
             <h2 className="text-sm font-semibold">AI Assistant</h2>
-            {aiAvailability?.model && (
+            {aiAvailability?.claudeAvailable && (aiAvailability?.available || aiAvailability?.ollamaReachable) ? (
+              <div className="inline-flex items-center bg-muted/80 rounded-full p-0.5 border border-border text-[10px]">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setProvider("ollama");
+                    localStorage.setItem("preferred-ai-provider", "ollama");
+                  }}
+                  className={`px-2 py-0.5 rounded-full font-medium transition-colors ${
+                    provider === "ollama"
+                      ? "bg-accent text-accent-foreground font-semibold shadow-xs"
+                      : "text-muted-foreground hover:text-foreground"
+                  }`}
+                >
+                  Ollama
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setProvider("claude");
+                    localStorage.setItem("preferred-ai-provider", "claude");
+                  }}
+                  className={`px-2 py-0.5 rounded-full font-medium transition-colors ${
+                    provider === "claude"
+                      ? "bg-accent text-accent-foreground font-semibold shadow-xs"
+                      : "text-muted-foreground hover:text-foreground"
+                  }`}
+                >
+                  Claude CLI
+                </button>
+              </div>
+            ) : provider === "claude" || (!aiAvailability?.available && aiAvailability?.claudeAvailable) ? (
+              <span className="text-[10px] bg-accent/15 text-accent px-1.5 py-0.5 rounded font-mono font-normal">
+                Claude CLI
+              </span>
+            ) : aiAvailability?.model ? (
               <span className="text-[10px] bg-accent/15 text-accent px-1.5 py-0.5 rounded font-mono font-normal">
                 {aiAvailability.model}
               </span>
-            )}
+            ) : null}
           </div>
           <p className="text-xs text-muted-foreground">
-            Describe the carousel you want to create
+            {provider === "claude"
+              ? "Autonomous slide design via Claude CLI"
+              : "Autonomous slide design via local Ollama"}
           </p>
         </div>
         {messages.length > 0 && (
@@ -323,6 +375,17 @@ export function ChatPanel({
             }
           />
         ))}
+
+        {/* Live progress indicator banner */}
+        {isStreaming && (
+          <div className="mx-4 my-2 flex items-center gap-2.5 text-xs text-muted-foreground bg-muted/60 border border-border/50 rounded-lg p-2.5 animate-pulse">
+            <Loader2 className="h-3.5 w-3.5 text-accent animate-spin shrink-0" />
+            <span className="font-medium text-foreground">
+              {statusMessage || "AI is working..."}
+            </span>
+          </div>
+        )}
+
         {error && (
           <div className="mx-4 my-2 flex items-center gap-2 text-destructive text-xs bg-destructive/10 rounded-lg p-3">
             <AlertCircle className="h-4 w-4 shrink-0" />
@@ -334,6 +397,7 @@ export function ChatPanel({
       <ChatInput
         onSend={handleSend}
         isStreaming={isStreaming}
+        statusMessage={statusMessage}
         textareaRef={chatInputRef}
         onStop={handleStopGenerating}
       />

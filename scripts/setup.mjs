@@ -62,6 +62,25 @@ async function checkOllamaSetup() {
   }
 }
 
+function checkClaudeSetup() {
+  try {
+    const cmd = process.platform === "win32" ? "where" : "command";
+    const args = process.platform === "win32" ? ["claude"] : ["-v", "claude"];
+    const probe = crossSpawn.sync(cmd, args, { stdio: "pipe" });
+    if (probe.status === 0 && probe.stdout) {
+      const p = probe.stdout.toString().split(/\r?\n/).find((l) => l.trim());
+      if (p && fs.existsSync(p.trim())) {
+        log(`  ✅ Claude CLI found at: ${p.trim()}`);
+        return true;
+      }
+    }
+  } catch {
+    // ignore
+  }
+  log("  ○ Claude CLI: not installed (optional — install from https://docs.anthropic.com/en/docs/claude-code)");
+  return false;
+}
+
 function seedDataFiles() {
   const dataDir = path.join(ROOT, "data");
   const uploadsDir = path.join(ROOT, "public", "uploads");
@@ -119,8 +138,9 @@ async function main() {
   seedDataFiles();
   log("");
 
-  log("🔍 Checking Ollama AI status...");
+  log("🔍 Checking AI providers (Ollama & Claude CLI)...");
   await checkOllamaSetup();
+  checkClaudeSetup();
   log("");
 
   if (process.env.OC_SETUP_NO_DEV) {

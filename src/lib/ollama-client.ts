@@ -81,6 +81,10 @@ export interface OllamaHealthStatus {
   model: string;
   baseUrl: string;
   error?: string;
+  claudeAvailable?: boolean;
+  claudePath?: string | null;
+  activeProvider?: "ollama" | "claude";
+  defaultProvider?: "ollama" | "claude";
 }
 
 export function getOllamaBaseUrl(): string {

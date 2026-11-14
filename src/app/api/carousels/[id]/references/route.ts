@@ -5,6 +5,7 @@ import { NextResponse } from "next/server";
 import path from "path";
 import { addReferenceImage, removeReferenceImage, getCarousel } from "@/lib/carousels";
 import { generateId, now } from "@/lib/utils";
+import { getUploadsDir } from "@/lib/storage-paths";
 
 export async function GET(
   _request: Request,
@@ -31,7 +32,9 @@ export async function POST(
       return NextResponse.json({ error: "url is required" }, { status: 400 });
     }
 
-    const absPath = path.resolve(process.cwd(), "public", url.replace(/^\//, ""));
+    const absPath = url.startsWith("/uploads/")
+      ? path.join(getUploadsDir(), url.replace(/^\/uploads\/?/, ""))
+      : path.resolve(process.cwd(), "public", url.replace(/^\//, ""));
 
     const ref = {
       id: generateId(),

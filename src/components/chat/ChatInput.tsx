@@ -13,6 +13,7 @@ interface ChatInputProps {
   disabled?: boolean;
   textareaRef?: React.RefObject<HTMLTextAreaElement | null>;
   onStop?: () => void;
+  statusMessage?: string | null;
 }
 
 const SUGGESTIONS = [
@@ -23,7 +24,14 @@ const SUGGESTIONS = [
   "Make the headings bigger",
 ];
 
-export function ChatInput({ onSend, isStreaming, disabled, textareaRef: externalRef, onStop }: ChatInputProps) {
+export function ChatInput({
+  onSend,
+  isStreaming,
+  disabled,
+  textareaRef: externalRef,
+  onStop,
+  statusMessage,
+}: ChatInputProps) {
   const [value, setValue] = useState("");
   const internalRef = useRef<HTMLTextAreaElement>(null);
   const textareaRef = externalRef || internalRef;
@@ -76,7 +84,9 @@ export function ChatInput({ onSend, isStreaming, disabled, textareaRef: external
           onKeyDown={handleKeyDown}
           onInput={handleInput}
           placeholder={
-            isStreaming ? "AI is working..." : "Describe your carousel..."
+            isStreaming
+              ? statusMessage || "AI is working..."
+              : "Describe your carousel..."
           }
           disabled={isStreaming || disabled}
           rows={1}
@@ -99,7 +109,7 @@ export function ChatInput({ onSend, isStreaming, disabled, textareaRef: external
             disabled={!value.trim() || disabled}
             aria-label="Send message"
           >
-            <Send className="h-4 w-4" />
+            <Send className="h-3.5 w-3.5" />
           </Button>
         )}
       </div>

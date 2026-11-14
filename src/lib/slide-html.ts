@@ -72,7 +72,9 @@ export function wrapSlideHtml(
   ${fontBlock}
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
-    html, body { width: ${width}px; height: ${height}px; overflow: hidden; }
+    html, body { width: ${width}px; height: ${height}px; overflow: hidden; background: transparent; }
+    img { max-width: 100%; height: auto; }
+    img[src=""], img:not([src]) { display: none !important; }
   </style>
 </head>
 <body>

@@ -3,8 +3,11 @@
 // id: er-00809c4b
 import { readFile, writeFile, mkdir } from "fs/promises";
 import path from "path";
+import { getFontCacheDir } from "./storage-paths";
 
-const FONT_CACHE_DIR = path.resolve(process.cwd(), "data", ".font-cache");
+function getFontCacheDirectory(): string {
+  return getFontCacheDir();
+}
 
 // In-memory cache (survives across requests, lost on restart)
 const memoryCache = new Map<string, string>();
@@ -50,7 +53,7 @@ async function getCachedFont(family: string): Promise<string | null> {
   // Check disk
   try {
     const diskPath = path.join(
-      FONT_CACHE_DIR,
+      getFontCacheDirectory(),
       `${family.replace(/\s/g, "-")}.css`
     );
     const css = await readFile(diskPath, "utf-8");
@@ -64,9 +67,10 @@ async function getCachedFont(family: string): Promise<string | null> {
 async function cacheFont(family: string, css: string): Promise<void> {
   memoryCache.set(family, css);
   try {
-    await mkdir(FONT_CACHE_DIR, { recursive: true });
+    const cacheDir = getFontCacheDirectory();
+    await mkdir(cacheDir, { recursive: true });
     const diskPath = path.join(
-      FONT_CACHE_DIR,
+      cacheDir,
       `${family.replace(/\s/g, "-")}.css`
     );
     await writeFile(diskPath, css, "utf-8");

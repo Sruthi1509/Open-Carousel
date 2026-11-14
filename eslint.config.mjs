@@ -15,6 +15,12 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     "next-env.d.ts",
+    "bundled-chromium/**",
+    "release/**",
+    "dist-electron/**",
+    "squashfs-root/**",
+    // Plain CJS runtime files that must use require() — not processed by TypeScript/Next.js
+    "scripts/server-shim.js",
   ]),
 ]);
 

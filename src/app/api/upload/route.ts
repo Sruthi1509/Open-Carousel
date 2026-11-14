@@ -6,8 +6,7 @@ import { writeFile, mkdir } from "fs/promises";
 import path from "path";
 import sharp from "sharp";
 import { generateId } from "@/lib/utils";
-
-const UPLOAD_DIR = path.resolve(process.cwd(), "public/uploads");
+import { getUploadsDir } from "@/lib/storage-paths";
 const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB
 
 // Magic bytes for allowed image types
@@ -94,12 +93,13 @@ export async function POST(request: Request) {
     }
 
     const id = generateId();
-    await mkdir(UPLOAD_DIR, { recursive: true });
+    const uploadDir = getUploadsDir();
+    await mkdir(uploadDir, { recursive: true });
 
     if (fileType === "font") {
       // Save fonts directly — no Sharp processing
       const fontExt = ext === ".woff2" ? ".woff2" : ".ttf";
-      const fontDir = path.join(UPLOAD_DIR, "fonts");
+      const fontDir = path.join(uploadDir, "fonts");
       await mkdir(fontDir, { recursive: true });
       const filename = `${id}${fontExt}`;
       await writeFile(path.join(fontDir, filename), Buffer.from(arrayBuffer));
@@ -118,7 +118,7 @@ export async function POST(request: Request) {
       .toBuffer();
 
     const filename = `${id}.png`;
-    await writeFile(path.join(UPLOAD_DIR, filename), processed);
+    await writeFile(path.join(uploadDir, filename), processed);
 
     return NextResponse.json({
       id,

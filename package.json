@@ -1,7 +1,7 @@
 {
   "name": "open-carrusel",
   "version": "0.1.0",
-  "description": "AI-powered Instagram carousel builder. Chat with Claude to design slides; export as PNGs at exact Instagram dimensions.",
+  "description": "AI-powered Instagram carousel builder. Design slides with Claude CLI or local Ollama; export as PNGs at exact Instagram dimensions.",
   "license": "MIT",
   "private": true,
   "engines": {
@@ -11,13 +11,22 @@
     "type": "git",
     "url": "https://github.com/Hainrixz/open-carrusel"
   },
+  "main": "dist-electron/main.js",
   "scripts": {
     "setup": "node scripts/setup.mjs",
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "doctor": "node scripts/doctor.mjs"
+    "test:chat-timeouts": "node scripts/test-chat-timeouts.mjs",
+    "test:slide-generation": "node --test src/lib/slide-generation.test.ts",
+    "doctor": "node scripts/doctor.mjs",
+    "build:electron": "tsc -p tsconfig.electron.json",
+    "dev:electron": "npm run build:electron && env -u ELECTRON_RUN_AS_NODE electron .",
+    "start:electron": "npm run build:electron && env -u ELECTRON_RUN_AS_NODE electron .",
+    "build:desktop": "node scripts/install-browser.mjs && next build && node scripts/prepare-standalone.mjs && npm run build:electron && electron-builder --linux AppImage",
+    "build:desktop:linux": "node scripts/install-browser.mjs --platform=linux && next build && node scripts/prepare-standalone.mjs && npm run build:electron && electron-builder --linux AppImage",
+    "build:desktop:win": "node scripts/install-browser.mjs --platform=win64 && next build && node scripts/prepare-standalone.mjs && npm run build:electron && electron-builder --win nsis"
   },
   "dependencies": {
     "@dnd-kit/core": "^6.3.1",
@@ -44,6 +53,8 @@
     "@types/node": "^20",
     "@types/react": "^19",
     "@types/react-dom": "^19",
+    "electron": "^45.2.3",
+    "electron-builder": "^26.18.0",
     "eslint": "^9",
     "eslint-config-next": "16.2.3",
     "tailwindcss": "^4",
@@ -54,5 +65,65 @@
     "puppeteer@24.40.0": true,
     "sharp@0.34.5": true,
     "unrs-resolver@1.11.1": true
+  },
+  "build": {
+    "appId": "com.opencarrusel.app",
+    "productName": "Open Carrusel",
+    "directories": {
+      "output": "release"
+    },
+    "afterPack": "./scripts/after-pack.mjs",
+    "files": [
+      "dist-electron/**/*"
+    ],
+    "extraResources": [
+      {
+        "from": ".next/standalone",
+        "to": "standalone",
+        "filter": [
+          "**/*",
+          "!release/**",
+          "!bundled-chromium/**",
+          "!data/**",
+          "!docs/**",
+          "!src/**"
+        ]
+      },
+      {
+        "from": "bundled-chromium",
+        "to": "chromium",
+        "filter": [
+          "**/*"
+        ]
+      }
+    ],
+    "asar": true,
+    "linux": {
+      "target": [
+        "AppImage"
+      ],
+      "category": "Graphics",
+      "icon": "build/icon.png"
+    },
+    "win": {
+      "target": [
+        "nsis"
+      ],
+      "icon": "src/app/favicon.ico"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "Open Carrusel",
+      "uninstallDisplayName": "Open Carrusel",
+      "deleteAppDataOnUninstall": false,
+      "artifactName": "${productName} Setup ${version}.${ext}"
+    }
+  },
+  "optionalDependencies": {
+    "@img/sharp-libvips-win32-x64": "^1.2.4",
+    "@img/sharp-win32-x64": "^0.34.5"
   }
 }
